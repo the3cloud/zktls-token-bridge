@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.28;
 
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -7,19 +7,21 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/utils/Create2.sol";
+import "./TokenFactory.sol";
+import "./TokenBridgeManager.sol";
+import "./interfaces/IVerifier.sol";
 
-interface IBridgeToken is IERC20 {
+interface IMintableBurnableToken is IERC20 {
     function mint(address to, uint256 amount) external;
     function burn(address from, uint256 amount) external;
-    function grantRole(bytes32 role, address account) external;
-    function revokeRole(bytes32 role, address account) external;
-    function BRIDGE_ROLE() external view returns (bytes32);
 }
 
-contract TokenBridge is Initializable, OwnableUpgradeable, PausableUpgradeable, UUPSUpgradeable {
+contract TokenBridge is Initializable, PausableUpgradeable, UUPSUpgradeable, TokenBridgeManager {
     struct TokenConfig {
         bool isSupported;
-        bool isBridgeToken; // true if this is a mintable token on this chain
         uint8 decimals;
         uint256 minimumAmount;
         uint256 maximumAmount;
@@ -36,12 +38,15 @@ contract TokenBridge is Initializable, OwnableUpgradeable, PausableUpgradeable, 
         uint256 targetChainId;
         uint256 nonce;
         uint256 timestamp;
+        uint256 sourceChainId;
     }
 
-    address public validator;
+    TokenFactory public tokenFactory;
+    IProofVerifier public verifier;
+
     mapping(address => TokenConfig) public supportedTokens;
-    mapping(bytes32 => bool) public processedHashes;
-    mapping(address => mapping(uint256 => address)) public tokenPairs; // token address => target chain id => target token address
+    mapping(bytes32 => bytes) public operationProofs; // operationHash => proof bytes
+    mapping(address => mapping(uint256 => address)) public tokenPairs;
     uint256 public constant DAILY_LIMIT_DURATION = 24 hours;
     
     event TokenLocked(
@@ -62,6 +67,12 @@ contract TokenBridge is Initializable, OwnableUpgradeable, PausableUpgradeable, 
         bytes32 operationHash
     );
 
+    event OperationRelayed(
+        bytes32 indexed operationHash,
+        uint256 sourceChainId,
+        uint256 targetChainId
+    );
+
     error InvalidToken();
     error InvalidAmount();
     error DailyLimitExceeded();
@@ -69,58 +80,59 @@ contract TokenBridge is Initializable, OwnableUpgradeable, PausableUpgradeable, 
     error UnauthorizedValidator();
     error TokenPairNotConfigured();
     error InvalidDecimals();
-    error NotBridgeToken();
+    error NotMintableBurnable();
+    error TokenAlreadyExists();
+    error TokenDeploymentFailed();
+    error InvalidSalt();
+    error InvalidFactory();
+    error InvalidVerifier();
+    error InvalidProof();
+    error InvalidOperation();
+    error UnauthorizedAccess();
 
-    /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
-        _disableInitializers();
-    }
-
-    function initialize(address initialOwner) initializer public {
-        __Ownable_init(initialOwner);
+    function initialize(address initialOwner, address _relayer, address _tokenManager) initializer public {
+        __TokenBridgeManager_init(initialOwner, _relayer, _tokenManager);
         __Pausable_init();
         __UUPSUpgradeable_init();
     }
 
-    modifier onlyValidator() {
-        if (msg.sender != validator) revert UnauthorizedValidator();
-        _;
+    function setTokenFactory(address _tokenFactory) external restricted {
+        if (_tokenFactory == address(0)) revert InvalidFactory();
+        tokenFactory = TokenFactory(_tokenFactory);
     }
 
-    function setValidator(address _validator) external onlyOwner {
-        validator = _validator;
+    function setVerifier(address _verifier) external restricted {
+        if (_verifier == address(0)) revert InvalidVerifier();
+        verifier = IProofVerifier(_verifier);
     }
 
     function configureToken(
         address token,
-        bool isBridgeToken,
         uint256 minAmount,
         uint256 maxAmount,
         uint256 dailyLimit,
         uint256[] calldata targetChainIds,
         address[] calldata targetTokens
-    ) external onlyOwner {
+    ) external onlyTokenManager {
         if (targetChainIds.length != targetTokens.length) revert InvalidToken();
         
         uint8 decimals = IERC20Metadata(token).decimals();
         
-        // If this is a bridge token, ensure we have the BRIDGE_ROLE
-        if (isBridgeToken) {
-            try IBridgeToken(token).BRIDGE_ROLE() returns (bytes32 role) {
-                // Attempt to verify or obtain BRIDGE_ROLE
-                try IBridgeToken(token).grantRole(role, address(this)) {
-                    // Role granted successfully
-                } catch {
-                    revert("Failed to obtain BRIDGE_ROLE");
-                }
-            } catch {
-                revert("Token does not implement BRIDGE_ROLE");
-            }
+        // Check if token supports mint and burn operations
+        try IMintableBurnableToken(token).mint(address(this), 0) {
+            // Token supports mint
+        } catch {
+            revert NotMintableBurnable();
+        }
+        
+        try IMintableBurnableToken(token).burn(address(this), 0) {
+            // Token supports burn
+        } catch {
+            revert NotMintableBurnable();
         }
         
         supportedTokens[token] = TokenConfig({
             isSupported: true,
-            isBridgeToken: isBridgeToken,
             decimals: decimals,
             minimumAmount: minAmount,
             maximumAmount: maxAmount,
@@ -134,19 +146,7 @@ contract TokenBridge is Initializable, OwnableUpgradeable, PausableUpgradeable, 
         }
     }
 
-    function removeToken(address token) external onlyOwner {
-        TokenConfig memory config = supportedTokens[token];
-        if (config.isBridgeToken) {
-            try IBridgeToken(token).BRIDGE_ROLE() returns (bytes32 role) {
-                try IBridgeToken(token).revokeRole(role, address(this)) {
-                    // Role revoked successfully
-                } catch {
-                    // Ignore revocation failures
-                }
-            } catch {
-                // Ignore if BRIDGE_ROLE is not implemented
-            }
-        }
+    function removeToken(address token) external onlyTokenManager {
         delete supportedTokens[token];
     }
 
@@ -173,7 +173,7 @@ contract TokenBridge is Initializable, OwnableUpgradeable, PausableUpgradeable, 
         address receiver,
         uint256 amount,
         uint256 targetChainId
-    ) external whenNotPaused {
+    ) external onlyRelayer whenNotPaused {
         if (tokenPairs[token][targetChainId] == address(0)) revert TokenPairNotConfigured();
         
         _validateAmount(token, amount);
@@ -186,21 +186,15 @@ contract TokenBridge is Initializable, OwnableUpgradeable, PausableUpgradeable, 
             amount: amount,
             targetChainId: targetChainId,
             nonce: _generateNonce(),
-            timestamp: block.timestamp
+            timestamp: block.timestamp,
+            sourceChainId: block.chainid
         });
 
         bytes32 operationHash = _hashOperation(operation);
-        if (processedHashes[operationHash]) revert TransactionAlreadyProcessed();
+        if (operationProofs[operationHash].length > 0) revert TransactionAlreadyProcessed();
         
-        processedHashes[operationHash] = true;
-
-        // If token is a bridge token on this chain, burn it
-        if (supportedTokens[token].isBridgeToken) {
-            IBridgeToken(token).burn(msg.sender, amount);
-        } else {
-            // Otherwise, lock it in the bridge
-            require(IERC20(token).transferFrom(msg.sender, address(this), amount), "Transfer failed");
-        }
+        // Burn the tokens
+        IMintableBurnableToken(token).burn(msg.sender, amount);
         
         emit TokenLocked(
             token,
@@ -213,31 +207,68 @@ contract TokenBridge is Initializable, OwnableUpgradeable, PausableUpgradeable, 
         );
     }
 
+    function relayOperation(
+        BridgeOperation calldata operation,
+        bytes calldata proofBytes
+    ) external onlyValidator {
+        bytes32 operationHash = _hashOperation(operation);
+        
+        // Verify this is a valid target chain operation
+        if (operation.targetChainId != block.chainid) revert InvalidOperation();
+        
+        // Store the proof for this operation
+        operationProofs[operationHash] = proofBytes;
+        
+        emit OperationRelayed(
+            operationHash,
+            operation.sourceChainId,
+            operation.targetChainId
+        );
+    }
+
     function mintTokens(
         address token,
         address to,
         uint256 amount,
-        uint256 sourceChainId,
-        bytes32 sourceChainTxHash
+        BridgeOperation calldata operation
     ) external onlyValidator whenNotPaused {
         TokenConfig memory config = supportedTokens[token];
         if (!config.isSupported) revert InvalidToken();
-        if (!config.isBridgeToken) revert NotBridgeToken();
-        if (processedHashes[sourceChainTxHash]) revert TransactionAlreadyProcessed();
+        
+        // Verify the operation hash
+        bytes32 operationHash = _hashOperation(operation);
+        bytes memory proofBytes = operationProofs[operationHash];
+        if (proofBytes.length == 0) revert TransactionAlreadyProcessed();
+        
+        // Prepare public values for verification
+        bytes memory publicValues = abi.encode(
+            operation.token,
+            operation.sender,
+            operation.receiver,
+            operation.amount,
+            operation.targetChainId,
+            operation.nonce,
+            operation.timestamp,
+            operation.sourceChainId
+        );
+        
+        // Verify the proof
+        verifier.verifyProof(publicValues, proofBytes);
         
         _validateAmount(token, amount);
         _updateDailyLimit(token, amount);
         
-        processedHashes[sourceChainTxHash] = true;
+        // Clear the proof to prevent replay
+        delete operationProofs[operationHash];
         
-        IBridgeToken(token).mint(to, amount);
+        IMintableBurnableToken(token).mint(to, amount);
         
         emit TokenMinted(
             token,
             to,
             amount,
-            sourceChainId,
-            sourceChainTxHash
+            operation.sourceChainId,
+            operationHash
         );
     }
 
@@ -254,7 +285,8 @@ contract TokenBridge is Initializable, OwnableUpgradeable, PausableUpgradeable, 
                 operation.amount,
                 operation.targetChainId,
                 operation.nonce,
-                operation.timestamp
+                operation.timestamp,
+                operation.sourceChainId
             )
         );
     }
@@ -288,4 +320,60 @@ contract TokenBridge is Initializable, OwnableUpgradeable, PausableUpgradeable, 
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+    function checkTokenExists(
+        address token,
+        uint256 targetChainId
+    ) external view returns (bool) {
+        return tokenPairs[token][targetChainId] != address(0);
+    }
+
+    function computeTokenAddress(
+        string calldata name,
+        string calldata symbol,
+        uint8 decimals,
+        bytes32 salt
+    ) external view returns (address) {
+        return tokenFactory.computeTokenAddress(name, symbol, decimals, salt);
+    }
+
+    function deployBridgeToken(
+        string calldata name,
+        string calldata symbol,
+        uint8 decimals,
+        uint256 targetChainId,
+        bytes32 salt
+    ) external restricted returns (address) {
+        if (address(tokenFactory) == address(0)) revert InvalidFactory();
+        if (salt == bytes32(0)) revert InvalidSalt();
+
+        // Check if token already exists for this chain
+        if (tokenPairs[address(0)][targetChainId] != address(0)) {
+            revert TokenAlreadyExists();
+        }
+
+        // Deploy new token using factory
+        address newToken = tokenFactory.deployToken(name, symbol, decimals, salt);
+        
+        // Grant mint and burn roles to this contract
+        BridgeToken(newToken).grantRole(BridgeToken(newToken).MINTER_ROLE(), address(this));
+        BridgeToken(newToken).grantRole(BridgeToken(newToken).BURNER_ROLE(), address(this));
+
+        // Configure the token in the bridge
+        uint256[] memory targetChainIds = new uint256[](1);
+        address[] memory targetTokens = new address[](1);
+        targetChainIds[0] = targetChainId;
+        targetTokens[0] = newToken;
+
+        this.configureToken(
+            newToken,
+            0, // minAmount
+            type(uint256).max, // maxAmount
+            type(uint256).max, // dailyLimit
+            targetChainIds,
+            targetTokens
+        );
+
+        return newToken;
+    }
 } 
