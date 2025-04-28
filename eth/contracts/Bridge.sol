@@ -7,7 +7,7 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import "./BridgeManager.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract Bridge is Initializable, PausableUpgradeable, UUPSUpgradeable, BridgeManager {
     // source chain token address => token handler address
@@ -18,6 +18,8 @@ contract Bridge is Initializable, PausableUpgradeable, UUPSUpgradeable, BridgeMa
     mapping(address => mapping(uint16 => uint8)) public tokenDecimals;
     // deposit nonce counter
     uint256 public depositNonce;
+    // Prevent replay attacks for deliveries
+    mapping(uint16 => mapping(uint256 => bool)) public completed;
 
     event Transfer(
         uint16 destChainId,
@@ -108,7 +110,6 @@ contract Bridge is Initializable, PausableUpgradeable, UUPSUpgradeable, BridgeMa
         require(tokenHandlers[tokenAddress] != address(0), "Token handler not set");
         require(tokenPairs[tokenAddress][destChainId] != address(0), "Token pair not set");
 
-        // Validate and convert amount
         (uint256 destAmount, uint256 usedSrcAmount, ) = getConvertibleAmount(
             tokenAddress,
             uint16(block.chainid),
@@ -116,13 +117,14 @@ contract Bridge is Initializable, PausableUpgradeable, UUPSUpgradeable, BridgeMa
             amount
         );
         require(usedSrcAmount > 0, "Amount too small to convert");
-        require(amount == usedSrcAmount, "Amount includes unconvertible dust");
 
         address handlerAddress = tokenHandlers[tokenAddress];
-        IHandler handler = IHandler(handlerAddress);
 
-        bytes memory data = abi.encode(tokenAddress, amount, receiver, destAmount);
-        handlerResponse = handler.handleTransfer(msg.sender, data);
+        IERC20(tokenAddress).transferFrom(msg.sender, handlerAddress, usedSrcAmount);
+
+        IHandler handler = IHandler(handlerAddress);
+        bytes memory data = abi.encode(tokenAddress, usedSrcAmount, receiver, destAmount);
+        handlerResponse = handler.handleTransfer(data);
 
         depositNonce++;
         emit Transfer(
@@ -151,6 +153,10 @@ contract Bridge is Initializable, PausableUpgradeable, UUPSUpgradeable, BridgeMa
         bytes calldata data
         // bytes calldata proofBytes
     ) external whenNotPaused {
+        // Prevent replay
+        require(!completed[srcChainId][depositNonce_], "Delivery already completed");
+        completed[srcChainId][depositNonce_] = true;
+
         // TODO: Verify proofBytes
 
         IHandler handler = IHandler(handlerAddress);

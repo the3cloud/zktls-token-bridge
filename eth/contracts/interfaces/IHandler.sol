@@ -4,12 +4,10 @@ pragma solidity ^0.8.0;
 interface IHandler {
     /**
      * @notice Handles the token transfer operation on the source chain
-     * @param sender The address initiating the transfer
      * @param data The encoded data containing token address and amount
      * @return handlerResponse The response from the handler
      */
     function handleTransfer(
-        address sender,
         bytes calldata data
     ) external returns (bytes memory handlerResponse);
 

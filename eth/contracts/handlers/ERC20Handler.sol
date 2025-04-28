@@ -61,26 +61,22 @@ contract ERC20Handler is IHandler, Ownable {
 
     /**
      * @notice Handles the token transfer operation on the source chain
-     * @param sender The address initiating the transfer
      * @param data The encoded data containing token address and amount
      * @return handlerResponse The response from the handler
      */
     function handleTransfer(
-        address sender,
         bytes calldata data
     ) external override onlyBridge returns (bytes memory handlerResponse) {
-        (address tokenAddress, uint256 amount, ) = abi.decode(data, (address, uint256, address));
+        (address tokenAddress, uint256 amount, , ) = abi.decode(data, (address, uint256, address, uint256));
         require(!tokenPaused[tokenAddress], "Token is paused");
 
         if (tokenLockStatus[tokenAddress]) {
-            // Lock tokens
-            IERC20 token = IERC20(tokenAddress);
-            token.safeTransferFrom(sender, address(this), amount);
-            emit TokenLocked(tokenAddress, sender, amount);
+            // 只做锁定记录，不再做 transferFrom
+            emit TokenLocked(tokenAddress, msg.sender, amount);
         } else {
             // Burn tokens
             ERC20Burnable(tokenAddress).burn(amount);
-            emit TokenBurned(tokenAddress, sender, amount);
+            emit TokenBurned(tokenAddress, msg.sender, amount);
         }
 
         return abi.encode(true);
