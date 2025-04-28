@@ -14,8 +14,9 @@ import "@openzeppelin/contracts/interfaces/IERC4626.sol";
  * @dev Generic ERC20 token handler for ERC20 token transfers and deliveries
  */
 contract ERC20Handler is IHandler, Ownable {
-    constructor(address initialOwner) Ownable(initialOwner) {}
     using SafeERC20 for IERC20;
+
+    address public bridge;
 
     // token address => is locked (true) or burned (false)
     mapping(address => bool) public tokenLockStatus;
@@ -26,6 +27,19 @@ contract ERC20Handler is IHandler, Ownable {
     event TokenUnlocked(address indexed token, address indexed receiver, uint256 amount);
     event TokenBurned(address indexed token, address indexed sender, uint256 amount);
     event TokenMinted(address indexed token, address indexed receiver, uint256 amount);
+
+    constructor(address initialOwner, address bridgeAddress) Ownable(initialOwner) {
+        bridge = bridgeAddress;
+    }
+
+    modifier onlyBridge() {
+        require(msg.sender == bridge, "Only bridge can call");
+        _;
+    }
+
+    function setBridge(address _bridge) external onlyOwner {
+        bridge = _bridge;
+    }
 
     /**
      * @notice Sets the lock status for a token
@@ -54,7 +68,7 @@ contract ERC20Handler is IHandler, Ownable {
     function handleTransfer(
         address sender,
         bytes calldata data
-    ) external override returns (bytes memory handlerResponse) {
+    ) external override onlyBridge returns (bytes memory handlerResponse) {
         (address tokenAddress, uint256 amount, ) = abi.decode(data, (address, uint256, address));
         require(!tokenPaused[tokenAddress], "Token is paused");
 
@@ -81,7 +95,7 @@ contract ERC20Handler is IHandler, Ownable {
     function handleDelivery(
         address receiver,
         bytes calldata data
-    ) external override returns (bool success) {
+    ) external override onlyBridge returns (bool success) {
         (address tokenAddress, uint256 amount, ) = abi.decode(data, (address, uint256, address));
         require(!tokenPaused[tokenAddress], "Token is paused");
  
