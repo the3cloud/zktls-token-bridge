@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+interface IHandler {
+    /**
+     * @notice Handles the token transfer operation on the source chain
+     * @param destChainId The destination chain ID
+     * @param sender The address initiating the transfer
+     * @param data The encoded data containing token address and amount
+     * @return handlerResponse The response from the handler
+     */
+    function handleTransfer(
+        uint8 destChainId,
+        address sender,
+        bytes calldata data
+    ) external returns (bytes memory handlerResponse);
+
+    /**
+     * @notice Handles the token delivery operation on the destination chain
+     * @param receiver The address receiving the tokens
+     * @param data The encoded data containing token address and amount
+     * @return success Whether the delivery was successful
+     */
+    function handleDelivery(
+        address receiver,
+        bytes calldata data
+    ) external returns (bool success);
+} 
