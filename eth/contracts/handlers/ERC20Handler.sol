@@ -5,10 +5,8 @@ import "../interfaces/IHandler.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-
-interface IMintableERC20 is IERC20 {
-    function mint(address to, uint256 amount) external;
-}
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
+import "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 
 /**
@@ -49,28 +47,25 @@ contract ERC20Handler is IHandler, Ownable {
 
     /**
      * @notice Handles the token transfer operation on the source chain
-     * @param destChainId The destination chain ID
      * @param sender The address initiating the transfer
      * @param data The encoded data containing token address and amount
      * @return handlerResponse The response from the handler
      */
     function handleTransfer(
-        uint8 destChainId,
         address sender,
         bytes calldata data
     ) external override returns (bytes memory handlerResponse) {
         (address tokenAddress, uint256 amount, ) = abi.decode(data, (address, uint256, address));
         require(!tokenPaused[tokenAddress], "Token is paused");
 
-        IERC20 token = IERC20(tokenAddress);
-        
         if (tokenLockStatus[tokenAddress]) {
             // Lock tokens
+            IERC20 token = IERC20(tokenAddress);
             token.safeTransferFrom(sender, address(this), amount);
             emit TokenLocked(tokenAddress, sender, amount);
         } else {
             // Burn tokens
-            token.safeTransferFrom(sender, address(this), amount);
+            ERC20Burnable(tokenAddress).burn(amount);
             emit TokenBurned(tokenAddress, sender, amount);
         }
 
@@ -97,7 +92,7 @@ contract ERC20Handler is IHandler, Ownable {
             emit TokenUnlocked(tokenAddress, receiver, amount);
         } else {
             // Mint tokens
-            IMintableERC20(tokenAddress).mint(receiver, amount);
+            IERC4626(tokenAddress).mint(amount, receiver);
             emit TokenMinted(tokenAddress, receiver, amount);
         }
 

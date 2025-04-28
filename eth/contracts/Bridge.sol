@@ -13,14 +13,14 @@ contract Bridge is Initializable, PausableUpgradeable, UUPSUpgradeable, BridgeMa
     // source chain token address => token handler address
     mapping(address => address) public tokenHandlers;
     // source chain token address => destination chain id => destination chain token handler address
-    mapping(address => mapping(uint8 => address)) public tokenPairs;
-    // token decimals, token address => encode bytes[] for src and dest token decimals
-    mapping(address => bytes[]) public tokenDecimals;
+    mapping(address => mapping(uint16 => address)) public tokenPairs;
+    // token => chainId => decimals
+    mapping(address => mapping(uint16 => uint8)) public tokenDecimals;
     // deposit nonce counter
     uint256 public depositNonce;
 
     event Transfer(
-        uint8 destChainId,
+        uint16 destChainId,
         address destTokenHandlerAddress,
         uint256 depositNonce,
         address sender,
@@ -29,7 +29,7 @@ contract Bridge is Initializable, PausableUpgradeable, UUPSUpgradeable, BridgeMa
     );
 
     event Delivery(
-        uint8 srcChainId,
+        uint16 srcChainId,
         uint256 depositNonce,
         address receiver,
         address tokenHandler,
@@ -43,26 +43,86 @@ contract Bridge is Initializable, PausableUpgradeable, UUPSUpgradeable, BridgeMa
     }
 
     /**
+     * @notice Sets the token decimals for a token on a specific chain
+     * @param tokenAddress The token address
+     * @param chainId The chain ID (use local chain ID for this chain)
+     * @param decimals The token decimals
+     */
+    function setTokenDecimals(
+        address tokenAddress,
+        uint16 chainId,
+        uint8 decimals
+    ) external onlyTokenManager() {
+        tokenDecimals[tokenAddress][chainId] = decimals;
+    }
+
+    /**
+     * @notice Returns the convertible amount and dust for a given source amount between two chains
+     * @param token The token address
+     * @param srcChainId The source chain ID
+     * @param destChainId The destination chain ID
+     * @param srcAmount The amount in source decimals
+     * @return destAmount The amount in destination decimals
+     * @return usedSrcAmount The amount of source tokens actually used
+     * @return dust The unconvertible dust in source decimals
+     */
+    function getConvertibleAmount(
+        address token,
+        uint16 srcChainId,
+        uint16 destChainId,
+        uint256 srcAmount
+    ) public view returns (uint256 destAmount, uint256 usedSrcAmount, uint256 dust) {
+        uint8 srcDecimals = tokenDecimals[token][srcChainId];
+        uint8 destDecimals = tokenDecimals[token][destChainId];
+
+        if (srcDecimals == destDecimals) {
+            destAmount = srcAmount;
+            usedSrcAmount = srcAmount;
+            dust = 0;
+        } else if (srcDecimals > destDecimals) {
+            uint256 factor = 10 ** (srcDecimals - destDecimals);
+            destAmount = srcAmount / factor;
+            usedSrcAmount = destAmount * factor;
+            dust = srcAmount - usedSrcAmount;
+        } else {
+            uint256 factor = 10 ** (destDecimals - srcDecimals);
+            destAmount = srcAmount * factor;
+            usedSrcAmount = srcAmount;
+            dust = 0;
+        }
+    }
+
+    /**
      * @notice Initiates a cross-chain token transfer
      * @param destChainId The destination chain ID
      * @param tokenAddress The source token address
-     * @param amount The amount of tokens to transfer
+     * @param amount The amount of tokens to transfer (in source decimals)
      * @param receiver The address to receive tokens on the destination chain
      */
     function transfer(
-        uint8 destChainId,
+        uint16 destChainId,
         address tokenAddress,
         uint256 amount,
         address receiver
-    ) external payable whenNotPaused {
+    ) external payable whenNotPaused returns (bytes memory handlerResponse) {
         require(tokenHandlers[tokenAddress] != address(0), "Token handler not set");
         require(tokenPairs[tokenAddress][destChainId] != address(0), "Token pair not set");
+
+        // Validate and convert amount
+        (uint256 destAmount, uint256 usedSrcAmount, ) = getConvertibleAmount(
+            tokenAddress,
+            uint16(block.chainid),
+            destChainId,
+            amount
+        );
+        require(usedSrcAmount > 0, "Amount too small to convert");
+        require(amount == usedSrcAmount, "Amount includes unconvertible dust");
 
         address handlerAddress = tokenHandlers[tokenAddress];
         IHandler handler = IHandler(handlerAddress);
 
-        bytes memory data = abi.encode(tokenAddress, amount, receiver);
-        bytes memory handlerResponse = handler.handleTransfer(destChainId, msg.sender, data);
+        bytes memory data = abi.encode(tokenAddress, amount, receiver, destAmount);
+        handlerResponse = handler.handleTransfer(msg.sender, data);
 
         depositNonce++;
         emit Transfer(
@@ -84,7 +144,7 @@ contract Bridge is Initializable, PausableUpgradeable, UUPSUpgradeable, BridgeMa
      * @param data The encoded data containing token address and amount
      */
     function delivery(
-        uint8 srcChainId,
+        uint16 srcChainId,
         uint256 depositNonce_,
         address receiver,
         address handlerAddress,
@@ -121,25 +181,10 @@ contract Bridge is Initializable, PausableUpgradeable, UUPSUpgradeable, BridgeMa
      */
     function setTokenPair(
         address srcTokenAddress,
-        uint8 destChainId,
+        uint16 destChainId,
         address destHandlerAddress
     ) external onlyTokenManager() {
         tokenPairs[srcTokenAddress][destChainId] = destHandlerAddress;
-    }
-
-    /**
-     * @notice Sets the token decimals for a token
-     * @param tokenAddress The token address
-     * @param srcDecimals The source token decimals
-     * @param destDecimals The destination token decimals
-     */
-    function setTokenDecimals(
-        address tokenAddress,
-        uint8 srcDecimals,
-        uint8 destDecimals
-    ) external onlyTokenManager() {
-        tokenDecimals[tokenAddress].push(abi.encode(srcDecimals));
-        tokenDecimals[tokenAddress].push(abi.encode(destDecimals));
     }
 
     /***** Bridge Management Functions ******/
