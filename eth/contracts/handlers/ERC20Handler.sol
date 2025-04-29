@@ -1,111 +1,157 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "../interfaces/IHandler.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
-import "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import "./HandlerManager.sol";
 
-
-/**
- * @title ERC20Handler
- * @dev Generic ERC20 token handler for ERC20 token transfers and deliveries
- */
-contract ERC20Handler is IHandler, Ownable {
+contract ERC20Handler is Initializable, HandlerManager {
     using SafeERC20 for IERC20;
 
-    address public bridge;
-
-    // token address => is locked (true) or burned (false)
-    mapping(address => bool) public tokenLockStatus;
-    // token address => is paused
+    /* tokens configuration */
+    // src token => destination chain id => destination handler address
+    mapping(address => mapping(uint16 => uint8)) public tokenDecimals;
+    // src token => is_paused
     mapping(address => bool) public tokenPaused;
+    // src token => destination chain id => max transfer limit
+    mapping(address => mapping(uint16 => uint256)) public maxTransferLimit;
 
-    event TokenLocked(address indexed token, address indexed sender, uint256 amount);
-    event TokenUnlocked(address indexed token, address indexed receiver, uint256 amount);
-    event TokenBurned(address indexed token, address indexed sender, uint256 amount);
-    event TokenMinted(address indexed token, address indexed receiver, uint256 amount);
+    event TokenLocked(
+        address indexed token,
+        address indexed sender,
+        uint256 srcAmount,
+        uint256 destAmount
+    );
 
-    constructor(address initialOwner, address bridgeAddress) Ownable(initialOwner) {
-        bridge = bridgeAddress;
+    event TokenUnlocked(
+        address indexed token,
+        address indexed receiver,
+        uint256 amount
+    );
+
+    event TokenLimitUpdated(
+        address indexed token,
+        uint16 indexed chainId,
+        uint256 maxTransferLimit
+    );
+
+    function initialize(
+        address initialOwner,
+        address _tokenManager,
+        address _bridge
+    ) initializer public {
+        __HandlerManager_init(initialOwner, _tokenManager, _bridge);
     }
 
-    modifier onlyBridge() {
-        require(msg.sender == bridge, "Only bridge can call");
-        _;
-    }
-
-    function setBridge(address _bridge) external onlyOwner {
-        bridge = _bridge;
-    }
-
-    /**
-     * @notice Sets the lock status for a token
-     * @param tokenAddress The token address
-     * @param isLocked Whether the token should be locked (true) or burned (false)
-     */
-    function setTokenLockStatus(address tokenAddress, bool isLocked) external onlyOwner {
-        tokenLockStatus[tokenAddress] = isLocked;
-    }
-
-    /**
-     * @notice Sets the pause status for a token
-     * @param tokenAddress The token address
-     * @param isPaused Whether the token should be paused
-     */
-    function setTokenPaused(address tokenAddress, bool isPaused) external onlyOwner {
-        tokenPaused[tokenAddress] = isPaused;
-    }
-
-    /**
-     * @notice Handles the token transfer operation on the source chain
-     * @param data The encoded data containing token address and amount
-     * @return handlerResponse The response from the handler
-     */
     function handleTransfer(
         bytes calldata data
-    ) external override onlyBridge returns (bytes memory handlerResponse) {
-        (address tokenAddress, uint256 amount, , ) = abi.decode(data, (address, uint256, address, uint256));
-        require(!tokenPaused[tokenAddress], "Token is paused");
+    ) external payable onlyBridge returns (bytes memory) {
+        (
+            address token,
+            uint16 destChainId,
+            uint256 amount,
+            address receiver
+        ) = abi.decode(data, (address, uint16, uint256, address));
 
-        if (tokenLockStatus[tokenAddress]) {
-            // 只做锁定记录，不再做 transferFrom
-            emit TokenLocked(tokenAddress, msg.sender, amount);
+        require(!tokenPaused[token], "Token is paused");
+        require(tokenDecimals[token][destChainId] > 0, "Chain not supported for token");
+
+        (uint256 destAmount, uint256 usedSrcAmount, ) = getConvertibleAmount(
+            token,
+            uint16(block.chainid),
+            destChainId,
+            amount
+        );
+
+        require(destAmount <= maxTransferLimit[token][destChainId], "Exceeds transfer limit");
+
+        if (token == address(0)) {
+            require(msg.value == usedSrcAmount, "Invalid native token amount");
+            emit TokenLocked(address(0), msg.sender, usedSrcAmount, destAmount);
         } else {
-            // Burn tokens
-            ERC20Burnable(tokenAddress).burn(amount);
-            emit TokenBurned(tokenAddress, msg.sender, amount);
+            IERC20(token).safeTransferFrom(msg.sender, address(this), usedSrcAmount);
+            emit TokenLocked(token, msg.sender, usedSrcAmount, destAmount);
         }
 
-        return abi.encode(true);
+        return abi.encode(token, destAmount, receiver);
     }
 
-    /**
-     * @notice Handles the token delivery operation on the destination chain
-     * @param receiver The address receiving the tokens
-     * @param data The encoded data containing token address and amount
-     * @return success Whether the delivery was successful
-     */
     function handleDelivery(
-        address receiver,
         bytes calldata data
-    ) external override onlyBridge returns (bool success) {
-        (address tokenAddress, uint256 amount, ) = abi.decode(data, (address, uint256, address));
-        require(!tokenPaused[tokenAddress], "Token is paused");
- 
-        if (tokenLockStatus[tokenAddress]) {
-            // Unlock tokens
-            IERC20 token = IERC20(tokenAddress);
-            token.safeTransfer(receiver, amount);
-            emit TokenUnlocked(tokenAddress, receiver, amount);
+    ) external onlyBridge returns (bool) {
+        (
+            address token,
+            uint256 amount,
+            address receiver
+        ) = abi.decode(data, (address, uint256, address));
+
+        require(!tokenPaused[token], "Token is paused");
+
+        if (token == address(0)) {
+            require(address(this).balance >= amount, "Insufficient native token balance");
+            (bool success, ) = payable(receiver).call{value: amount}("");
+            require(success, "Native token transfer failed");
+            emit TokenUnlocked(address(0), receiver, amount);
         } else {
-            // Mint tokens
-            IERC4626(tokenAddress).mint(amount, receiver);
-            emit TokenMinted(tokenAddress, receiver, amount);
+            IERC20(token).safeTransfer(receiver, amount);
+            emit TokenUnlocked(token, receiver, amount);
         }
 
         return true;
     }
-} 
+
+    function getConvertibleAmount(
+        address token,
+        uint16 srcChainId,
+        uint16 destChainId,
+        uint256 srcAmount
+    ) public view returns (
+        uint256 destAmount,
+        uint256 usedSrcAmount,
+        uint256 dust
+    ) {
+        uint8 srcDecimals = tokenDecimals[token][srcChainId];
+        uint8 destDecimals = tokenDecimals[token][destChainId];
+
+        if (srcDecimals == destDecimals) {
+            destAmount = srcAmount;
+            usedSrcAmount = srcAmount;
+            dust = 0;
+        } else if (srcDecimals > destDecimals) {
+            uint256 factor = 10 ** (srcDecimals - destDecimals);
+            destAmount = srcAmount / factor;
+            usedSrcAmount = destAmount * factor;
+            dust = srcAmount - usedSrcAmount;
+        } else {
+            uint256 factor = 10 ** (destDecimals - srcDecimals);
+            destAmount = srcAmount * factor;
+            usedSrcAmount = srcAmount;
+            dust = 0;
+        }
+    }
+
+    /* token management */
+    function removeTokenSupport(
+        address token,
+        uint16 chainId
+    ) external onlyTokenManager {
+        delete tokenDecimals[token][chainId];
+    }
+
+    function setTokenPaused(
+        address token,
+        bool isPaused
+    ) external onlyTokenManager {
+        tokenPaused[token] = isPaused;
+    }
+
+    function setTransferLimit(
+        address token,
+        uint16 chainId,
+        uint256 limit
+    ) external onlyTokenManager {
+        maxTransferLimit[token][chainId] = limit;
+        emit TokenLimitUpdated(token, chainId, limit);
+    }
+}
