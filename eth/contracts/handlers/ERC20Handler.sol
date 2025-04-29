@@ -12,13 +12,13 @@ contract ERC20Handler is Initializable, HandlerManager {
 
     /* tokens configuration */
     // src token => destination chain id => destination handler address
-    mapping(address => mapping(uint16 => address)) public destHandlers;
+    mapping(address => mapping(uint256 => address)) public destHandlers;
     // src token => destination chain id => decimals
-    mapping(address => mapping(uint16 => uint8)) public tokenDecimals;
+    mapping(address => mapping(uint256 => uint8)) public tokenDecimals;
+    // src token => destination chain id => max transfer limit
+    mapping(address => mapping(uint256 => uint256)) public maxTransferLimit;
     // src token => is_paused
     mapping(address => bool) public tokenPaused;
-    // src token => destination chain id => max transfer limit
-    mapping(address => mapping(uint16 => uint256)) public maxTransferLimit;
 
     event TokenLocked(
         address indexed token,
@@ -35,7 +35,7 @@ contract ERC20Handler is Initializable, HandlerManager {
 
     event TokenLimitUpdated(
         address indexed token,
-        uint16 indexed chainId,
+        uint256 indexed chainId,
         uint256 maxTransferLimit
     );
 
@@ -52,17 +52,17 @@ contract ERC20Handler is Initializable, HandlerManager {
     ) external payable onlyBridge returns (bytes memory) {
         (
             address token,
-            uint16 destChainId,
+            uint256 destChainId,
             uint256 amount,
             address receiver
-        ) = abi.decode(data, (address, uint16, uint256, address));
+        ) = abi.decode(data, (address, uint256, uint256, address));
 
         require(!tokenPaused[token], "Token is paused");
         require(tokenDecimals[token][destChainId] > 0, "Chain not supported for token");
 
         (uint256 destAmount, uint256 usedSrcAmount, ) = getConvertibleAmount(
             token,
-            uint16(block.chainid),
+            block.chainid,
             destChainId,
             amount
         );
@@ -109,8 +109,8 @@ contract ERC20Handler is Initializable, HandlerManager {
 
     function getConvertibleAmount(
         address token,
-        uint16 srcChainId,
-        uint16 destChainId,
+        uint256 srcChainId,
+        uint256 destChainId,
         uint256 srcAmount
     ) public view returns (
         uint256 destAmount,
@@ -140,7 +140,7 @@ contract ERC20Handler is Initializable, HandlerManager {
     /* token management */
     function addTokenSupport(
         address token,
-        uint16 chainId,
+        uint256 chainId,
         address handler,
         uint8 decimals,
         uint256 limit
@@ -153,7 +153,7 @@ contract ERC20Handler is Initializable, HandlerManager {
 
     function removeTokenSupport(
         address token,
-        uint16 chainId
+        uint256 chainId
     ) external onlyTokenManager {
         delete tokenDecimals[token][chainId];
         delete destHandlers[token][chainId];
@@ -170,7 +170,7 @@ contract ERC20Handler is Initializable, HandlerManager {
 
     function setTransferLimit(
         address token,
-        uint16 chainId,
+        uint256 chainId,
         uint256 limit
     ) external onlyTokenManager {
         maxTransferLimit[token][chainId] = limit;

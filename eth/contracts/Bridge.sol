@@ -17,21 +17,21 @@ contract Bridge is Initializable, PausableUpgradeable, UUPSUpgradeable, BridgeMa
     address public verifier;
 
     // Prevent replay attacks
-    mapping(uint16 => mapping(uint256 => bool)) public completedMessages;
+    mapping(uint256 => mapping(uint256 => bool)) public completedMessages;
 
     event MessageSent(
-        uint16 fromChainId,
+        uint256 fromChainId,
         address indexed fromHandler,
-        uint16 toChainId,
+        uint256 toChainId,
         address indexed toHandler,
         uint256 nonce,
         bytes message
     );
 
     event MessageDelivered(
-        uint16 fromChainId,
+        uint256 fromChainId,
         address indexed fromHandler,
-        uint16 toChainId,
+        uint256 toChainId,
         address indexed toHandler,
         uint256 nonce,
         bytes message
@@ -72,7 +72,7 @@ contract Bridge is Initializable, PausableUpgradeable, UUPSUpgradeable, BridgeMa
      * @return Message nonce
      */
     function sendMessage(
-        uint16 destChainId,
+        uint256 destChainId,
         address destHandler,
         bytes calldata message
     ) external whenNotPaused returns (uint256) {
@@ -82,7 +82,7 @@ contract Bridge is Initializable, PausableUpgradeable, UUPSUpgradeable, BridgeMa
         messageNonce++;
         
         emit MessageSent(
-            uint16(block.chainid),  // fromChainId
+            uint256(block.chainid),  // fromChainId
             msg.sender,             // fromHandler
             destChainId,            // toChainId
             destHandler,            // toHandler
@@ -102,7 +102,7 @@ contract Bridge is Initializable, PausableUpgradeable, UUPSUpgradeable, BridgeMa
      * @param message Message bytes to be delivered
      */
     function deliverMessage(
-        uint16 srcChainId,
+        uint256 srcChainId,
         address srcHandler,
         address destHandler,
         uint256 messageNonce_,
@@ -114,7 +114,7 @@ contract Bridge is Initializable, PausableUpgradeable, UUPSUpgradeable, BridgeMa
 
 
         // encode public inputs for the verifier
-        bytes memory publicInputs = abi.encode(srcChainId, srcHandler, uint16(block.chainid), destHandler, messageNonce_, message);
+        bytes memory publicInputs = abi.encode(srcChainId, srcHandler, uint256(block.chainid), destHandler, messageNonce_, message);
         IProofVerifier(verifier).verifyProof(publicInputs, proofBytes);
         
         completedMessages[srcChainId][messageNonce_] = true;
@@ -124,10 +124,10 @@ contract Bridge is Initializable, PausableUpgradeable, UUPSUpgradeable, BridgeMa
         require(success, "Handler delivery failed");
 
         emit MessageDelivered(
-            srcChainId,           // fromChainId
-            srcHandler,           // fromHandler
-            uint16(block.chainid), // toChainId
-            destHandler,          // toHandler
+            srcChainId,           
+            srcHandler,           
+            uint256(block.chainid), 
+            destHandler,          
             messageNonce_,
             message
         );

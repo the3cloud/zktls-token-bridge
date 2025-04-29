@@ -13,7 +13,6 @@ interface IHandler {
 
     /**
      * @notice Handles the token delivery operation on the destination chain
-     * @param receiver The address receiving the tokens
      * @param data The encoded data containing token address and amount
      * @return success Whether the delivery was successful
      */
