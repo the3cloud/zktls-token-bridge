@@ -18,7 +18,6 @@ interface IHandler {
      * @return success Whether the delivery was successful
      */
     function handleDelivery(
-        address receiver,
         bytes calldata data
     ) external returns (bool success);
 } 

@@ -5,12 +5,15 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "./HandlerManager.sol";
+import "../interfaces/IBridge.sol";
 
 contract ERC20Handler is Initializable, HandlerManager {
     using SafeERC20 for IERC20;
 
     /* tokens configuration */
     // src token => destination chain id => destination handler address
+    mapping(address => mapping(uint16 => address)) public destHandlers;
+    // src token => destination chain id => decimals
     mapping(address => mapping(uint16 => uint8)) public tokenDecimals;
     // src token => is_paused
     mapping(address => bool) public tokenPaused;
@@ -74,7 +77,12 @@ contract ERC20Handler is Initializable, HandlerManager {
             emit TokenLocked(token, msg.sender, usedSrcAmount, destAmount);
         }
 
-        return abi.encode(token, destAmount, receiver);
+        bytes memory message = abi.encode(destHandlers[token][destChainId], destAmount, receiver);
+        
+        // Call bridge to send the cross-chain message
+        IBridge(bridge).sendMessage(destChainId, destHandlers[token][destChainId], message);
+
+        return message;
     }
 
     function handleDelivery(
@@ -85,8 +93,6 @@ contract ERC20Handler is Initializable, HandlerManager {
             uint256 amount,
             address receiver
         ) = abi.decode(data, (address, uint256, address));
-
-        require(!tokenPaused[token], "Token is paused");
 
         if (token == address(0)) {
             require(address(this).balance >= amount, "Insufficient native token balance");
@@ -132,11 +138,27 @@ contract ERC20Handler is Initializable, HandlerManager {
     }
 
     /* token management */
+    function addTokenSupport(
+        address token,
+        uint16 chainId,
+        address handler,
+        uint8 decimals,
+        uint256 limit
+    ) external onlyTokenManager {
+        tokenDecimals[token][chainId] = decimals;
+        destHandlers[token][chainId] = handler;
+        tokenPaused[token] = false;
+        maxTransferLimit[token][chainId] = limit;
+    }
+
     function removeTokenSupport(
         address token,
         uint16 chainId
     ) external onlyTokenManager {
         delete tokenDecimals[token][chainId];
+        delete destHandlers[token][chainId];
+        tokenPaused[token] = false;
+        maxTransferLimit[token][chainId] = 0;
     }
 
     function setTokenPaused(
@@ -153,5 +175,5 @@ contract ERC20Handler is Initializable, HandlerManager {
     ) external onlyTokenManager {
         maxTransferLimit[token][chainId] = limit;
         emit TokenLimitUpdated(token, chainId, limit);
-    }
+    } 
 }
