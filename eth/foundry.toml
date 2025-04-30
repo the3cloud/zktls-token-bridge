@@ -3,9 +3,18 @@ src = "contracts"
 out = "out"
 libs = ["lib", "dependencies"]
 
+# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
+solc = "0.8.28"
+evm_version = "paris"
+
+[rpc_endpoints]
+mainnet = "${RPC_MAINNET}"
+sepolia = "${RPC_SEPOLIA}"
+
+#[etherscan]
+#mainnet = { key = "${ETHERSCAN_MAINNET_KEY}" }
+
 [dependencies]
 forge-std = "1.9.6"
 "@openzeppelin-contracts" = "5.1.0"
 "@openzeppelin-contracts-upgradeable" = "5.1.0"
-
-# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
