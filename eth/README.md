@@ -45,12 +45,6 @@ $ forge snapshot
 $ anvil
 ```
 
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
 ### Cast
 
 ```shell
@@ -63,4 +57,20 @@ $ cast <subcommand>
 $ forge --help
 $ anvil --help
 $ cast --help
+```
+
+### Deployment
+
+```shell
+cd eth
+source .env
+cast send --value 10ether --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 ${PUBLIC_ADDRESS}
+
+forge script --chain 31337 --rpc-url http://127.0.0.1:8545 --private-key ${PRIVATE_KEY} --broadcast script/DeployMockVerifier.s.sol:DeployMockVerifier
+
+forge script --chain 31337 --rpc-url http://127.0.0.1:8545 --private-key ${PRIVATE_KEY} --broadcast script/DeployCreate2.s.sol:DeployCreate2Deployer
+
+forge script --chain 31337 --rpc-url http://127.0.0.1:8545 --private-key ${PRIVATE_KEY} --broadcast ./script/BridgeDeploy.s.sol:BridgeDeployScript
+
+forge script --chain 31337 --rpc-url http://127.0.0.1:8545 --private-key ${PRIVATE_KEY} --broadcast ./script/BridgeDeploy.s.sol:BridgeDeployScript
 ```

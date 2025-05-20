@@ -4,10 +4,10 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "./HandlerManager.sol";
 import "../interfaces/IBridge.sol";
+import "@openzeppelin/contracts/access/extensions/AccessControlDefaultAdminRules.sol";
 
-contract ERC20Handler is Initializable, HandlerManager {
+contract ERC20Handler is AccessControlDefaultAdminRules  {
     using SafeERC20 for IERC20;
 
     /* tokens configuration */
@@ -19,6 +19,8 @@ contract ERC20Handler is Initializable, HandlerManager {
     mapping(address => mapping(uint256 => uint256)) public maxTransferLimit;
     // src token => is_paused
     mapping(address => bool) public tokenPaused;
+    // bridge address
+    address public bridge;
 
     event TokenLocked(
         address indexed token,
@@ -39,17 +41,23 @@ contract ERC20Handler is Initializable, HandlerManager {
         uint256 maxTransferLimit
     );
 
-    function initialize(
-        address initialOwner,
+    /* Access control roles and modifiers */
+    bytes32 public constant TOKEN_MANAGER_ROLE = keccak256("TOKEN_MANAGER_ROLE");
+    bytes32 public constant BRIDGE_ROLE = keccak256("BRIDGE_ROLE");
+
+    constructor(
+        address _admin,
         address _tokenManager,
         address _bridge
-    ) initializer public {
-        __HandlerManager_init(initialOwner, _tokenManager, _bridge);
+    ) AccessControlDefaultAdminRules(1 days, _admin) {
+        _grantRole(TOKEN_MANAGER_ROLE, _tokenManager);
+        _grantRole(BRIDGE_ROLE, _bridge);
+        bridge = _bridge;
     }
 
     function handleTransfer(
         bytes calldata data
-    ) external payable onlyBridge returns (bytes memory) {
+    ) external payable onlyRole(BRIDGE_ROLE) returns (bytes memory) {
         (
             address token,
             uint256 destChainId,
@@ -87,7 +95,7 @@ contract ERC20Handler is Initializable, HandlerManager {
 
     function handleDelivery(
         bytes calldata data
-    ) external onlyBridge returns (bool) {
+    ) external onlyRole(BRIDGE_ROLE) returns (bool) {
         (
             address token,
             uint256 amount,
@@ -108,6 +116,7 @@ contract ERC20Handler is Initializable, HandlerManager {
     }
 
     function getConvertibleAmount(
+
         address token,
         uint256 srcChainId,
         uint256 destChainId,
@@ -144,7 +153,7 @@ contract ERC20Handler is Initializable, HandlerManager {
         address handler,
         uint8 decimals,
         uint256 limit
-    ) external onlyTokenManager {
+    ) external onlyRole(TOKEN_MANAGER_ROLE) {
         tokenDecimals[token][chainId] = decimals;
         destHandlers[token][chainId] = handler;
         tokenPaused[token] = false;
@@ -154,7 +163,7 @@ contract ERC20Handler is Initializable, HandlerManager {
     function removeTokenSupport(
         address token,
         uint256 chainId
-    ) external onlyTokenManager {
+    ) external onlyRole(TOKEN_MANAGER_ROLE) {
         delete tokenDecimals[token][chainId];
         delete destHandlers[token][chainId];
         tokenPaused[token] = false;
@@ -164,7 +173,7 @@ contract ERC20Handler is Initializable, HandlerManager {
     function setTokenPaused(
         address token,
         bool isPaused
-    ) external onlyTokenManager {
+    ) external onlyRole(TOKEN_MANAGER_ROLE) {
         tokenPaused[token] = isPaused;
     }
 
@@ -172,7 +181,7 @@ contract ERC20Handler is Initializable, HandlerManager {
         address token,
         uint256 chainId,
         uint256 limit
-    ) external onlyTokenManager {
+    ) external onlyRole(TOKEN_MANAGER_ROLE) {
         maxTransferLimit[token][chainId] = limit;
         emit TokenLimitUpdated(token, chainId, limit);
     } 

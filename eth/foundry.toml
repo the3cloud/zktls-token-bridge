@@ -7,12 +7,15 @@ libs = ["lib", "dependencies"]
 solc = "0.8.28"
 evm_version = "paris"
 
+fs_permissions = [{ access = "read-write", path = "config/" }]
+
 [rpc_endpoints]
 mainnet = "${RPC_MAINNET}"
 sepolia = "${RPC_SEPOLIA}"
 
-#[etherscan]
-#mainnet = { key = "${ETHERSCAN_MAINNET_KEY}" }
+[etherscan]
+mainnet = { key = "${ETHERSCAN_MAINNET_KEY}" }
+sepolia = { key = "${ETHERSCAN_MAINNET_KEY}" }
 
 [dependencies]
 forge-std = "1.9.6"
