@@ -12,42 +12,52 @@ import {Bridge} from "../contracts/Bridge.sol";
 contract BridgeDeployScript is Script, UpgradeableDeployer {
     
     EOAConfig eoaConfig;
+    BridgeContract savedBridge; 
+    BridgeContract readBridge;
+    HandlerContract savedHandler1;
+    HandlerContract savedHandler2;
+    HandlerContract[] handlers1;
 
     function run() external {
         vm.startBroadcast();
         
-        TomlConfig memory tomlConfig = loadTomlConfig();
-
-        console.log("tomlConfig.eoa.create2Deployer", tomlConfig.eoa.create2Deployer);
-        console.log("tomlConfig.eoa.bridgeOwner", tomlConfig.eoa.bridgeOwner);
-        console.log("tomlConfig.eoa.bridgeTokenManager", tomlConfig.eoa.bridgeTokenManager);
-        console.log("tomlConfig.eoa.bridgeVerifier", tomlConfig.eoa.bridgeVerifier);
-        console.log("tomlConfig.eoa.handlerAdmin", tomlConfig.eoa.handlerAdmin);
-        console.log("tomlConfig.eoa.handlerManager", tomlConfig.eoa.handlerManager);
-
-        console.log("tomlConfig.bridge.proxy", tomlConfig.bridge.proxy);
-        console.log("tomlConfig.bridge.impl", tomlConfig.bridge.impl);
-
-        for (uint256 i = 0; i < tomlConfig.handlers.length; i++) {
-            console.log("tomlConfig.handlers[i].contractName", tomlConfig.handlers[i].contractName);
-            console.log("tomlConfig.handlers[i].contractAddress", tomlConfig.handlers[i].contractAddress);
+        eoaConfig = getEOAConfig();
+        console.log("eoaConfig.bridgeOwner", eoaConfig.bridgeOwner);
+        console.log("eoaConfig.bridgeTokenManager", eoaConfig.bridgeTokenManager);
+        console.log("eoaConfig.bridgeVerifier", eoaConfig.bridgeVerifier);
+        console.log("eoaConfig.create2Deployer", eoaConfig.create2Deployer);
+        console.log("eoaConfig.handlerAdmin", eoaConfig.handlerAdmin);
+        console.log("eoaConfig.handlerManager", eoaConfig.handlerManager);
+        console.log("eoaConfig.handlerCount", eoaConfig.handlerCount);
+        // save bridge contract info
+        savedBridge = BridgeContract({
+            proxy: address(0xB878a321BcB64b467226440D169Af3B42b641122), 
+            impl: address(0xee9334dE884B32939d07bb922e8Cf4927e642233)
+        });
+        addDeployedContract("Bridge", savedBridge.impl, savedBridge.proxy);
+        saveBridgeDeployInfo(configPath());
+        // read saved bridge contract info
+        readBridge = getBridgeContractsInfo();
+        console.log("readBridge.proxy", readBridge.proxy);
+        console.log("readBridge.impl", readBridge.impl);
+        // save handler contract info
+        savedHandler1 = HandlerContract({
+            contractName: "GeneticHandler1",
+            contractAddress: address(0xeE9334dE884b32939d07bB922E8cf4927e6466b6)
+        });
+        savedHandler2 = HandlerContract({
+            contractName: "GeneticHandler2",
+            contractAddress: address(0xEe9334DE884b32939d07bB922e8Cf4927e646688)
+        });
+        addDeployedContract("GeneticHandler1", savedHandler1.contractAddress, address(0x0));
+        addDeployedContract("GeneticHandler2", savedHandler2.contractAddress, address(0x0));
+        
+        saveHandlerDeployInfo(configPath(), eoaConfig.handlerCount);
+        handlers1 = getHandlerContractsInfo(eoaConfig.handlerCount);
+        for (uint256 i = 0; i < handlers1.length; i++) {
+            console.log("handler.contractName", handlers1[i].contractName);
+            console.log("handler.contractAddress", handlers1[i].contractAddress);
         }
-
-        // eoaConfig = getEOAConfig(); 
-
-        // console.log("eoaConfig.bridgeOwnerAddress", eoaConfig.bridgeOwnerAddress);
-        // console.log("eoaConfig.bridgeTokenManagerAddress", eoaConfig.bridgeTokenManagerAddress);
-        // console.log("eoaConfig.bridgeVerifierAddress", eoaConfig.bridgeVerifierAddress);
-
-        // addDeployedContract(
-        //   "Bridge", 
-        //   address(0xB878a321BCB64b467226440d169aF3B42b642293),
-        //   address(0xeE9334De884b32939d07bB922E8cF4927E6466b7)
-        // );
-
-        // saveBridgeDeployInfo(configPath());
-
-
         vm.stopBroadcast();
     }
 }

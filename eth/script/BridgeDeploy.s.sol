@@ -18,9 +18,9 @@ contract BridgeDeployScript is Script, UpgradeableDeployer {
         
         eoaConfig = getEOAConfig(); 
 
-        console.log("eoaConfig.bridgeOwnerAddress", eoaConfig.bridgeOwnerAddress);
-        console.log("eoaConfig.bridgeTokenManagerAddress", eoaConfig.bridgeTokenManagerAddress);
-        console.log("eoaConfig.bridgeVerifierAddress", eoaConfig.bridgeVerifierAddress);
+        console.log("eoaConfig.bridgeOwner", eoaConfig.bridgeOwner);
+        console.log("eoaConfig.bridgeTokenManager", eoaConfig.bridgeTokenManager);
+        console.log("eoaConfig.bridgeVerifier", eoaConfig.bridgeVerifier);
 
         // Deploy Bridge using UUPS proxy
         (address proxyAddress, address implAddress) = deployUUPS(
@@ -30,9 +30,9 @@ contract BridgeDeployScript is Script, UpgradeableDeployer {
             abi.encodeCall(
                 Bridge.initialize,
                 (
-                    eoaConfig.bridgeOwnerAddress, 
-                    eoaConfig.bridgeTokenManagerAddress, 
-                    eoaConfig.bridgeVerifierAddress
+                    eoaConfig.bridgeOwner, 
+                    eoaConfig.bridgeTokenManager, 
+                    eoaConfig.bridgeVerifier
                 )
             )
         );

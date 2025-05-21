@@ -6,32 +6,34 @@ import {VmSafe} from "forge-std/Vm.sol";
 import {stdToml} from "forge-std/StdToml.sol";
 
 import {Forge} from "./Forge.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 contract Config {
-
+    using stdToml for string;
     struct EOAConfig {
-        address create2Deployer;
         address bridgeOwner;
         address bridgeTokenManager;
         address bridgeVerifier;
+        address create2Deployer;
         address handlerAdmin;
         address handlerManager;
+        uint256 handlerCount;
     }
 
-    struct BridgeContracts {
+    struct BridgeContract {
         address proxy;
         address impl;
     }
 
-    struct HandlerContracts {
+    struct HandlerContract {
         string contractName;
         address contractAddress;
     }
 
     struct TomlConfig {
         EOAConfig eoa;
-        BridgeContracts bridge;
-        HandlerContracts[] handlers;
+        BridgeContract bridge;
+        HandlerContract[] handlers;
     }
 
     function configPath() public view returns (string memory) {
@@ -41,8 +43,8 @@ contract Config {
 
     function loadTomlConfig() public view returns (TomlConfig memory tomlConfig) {
         VmSafe vm = Forge.safeVm();
-        string memory file = vm.readFile("config/anvil.toml");
-        bytes memory data = vm.parseToml(file);
+        string memory file = vm.readFile(configPath());
+        bytes memory data = file.parseRaw(".");
         tomlConfig = abi.decode(data, (TomlConfig));
     }
 
@@ -51,28 +53,33 @@ contract Config {
 
         string memory file = vm.readFile(configPath());
 
-        eoaConfig.create2Deployer = stdToml.readAddress(file, "$.eoa.create2_deployer");
         eoaConfig.bridgeOwner = stdToml.readAddress(file, "$.eoa.bridge_owner");
         eoaConfig.bridgeTokenManager = stdToml.readAddress(file, "$.eoa.bridge_token_manager");
         eoaConfig.bridgeVerifier = stdToml.readAddress(file, "$.eoa.bridge_verifier");
+        eoaConfig.create2Deployer = stdToml.readAddress(file, "$.eoa.create2_deployer");
         eoaConfig.handlerAdmin = stdToml.readAddress(file, "$.eoa.handler_admin");
         eoaConfig.handlerManager = stdToml.readAddress(file, "$.eoa.handler_manager");
+        eoaConfig.handlerCount = stdToml.readUint(file, "$.eoa.handlers_count");
     }
 
-    function getBridgeContractsInfo() public view returns (BridgeContracts memory bridgeContracts) {
+    function getBridgeContractsInfo() public view returns (BridgeContract memory bridgeContracts) {
         VmSafe vm = Forge.safeVm();
-
         string memory file = vm.readFile(configPath());
-
         bridgeContracts.proxy = stdToml.readAddress(file, "$.bridge.proxy");
         bridgeContracts.impl = stdToml.readAddress(file, "$.bridge.impl");
     }
 
-    function getHandlerContractsInfo(string memory handlerName) public view returns (HandlerContracts memory handlerContracts) {
+    function getHandlerContractsInfo(uint256 handlerCount) public view returns (HandlerContract[] memory handlerContracts) {
         VmSafe vm = Forge.safeVm();
 
         string memory file = vm.readFile(configPath());
-        string memory contractPath = string.concat("$.", handlerName, ".contract");
-        handlerContracts.contractAddress = stdToml.readAddress(file, contractPath);
+        handlerContracts = new HandlerContract[](handlerCount);
+        
+        for (uint256 i = 0; i < 2; i++) {
+            string memory contractAddressPath = string.concat("$.handlers[", Strings.toString(i), "].contractAddress");
+            string memory contractNamePath = string.concat("$.handlers[", Strings.toString(i), "].contractName");
+            handlerContracts[i].contractName = stdToml.readString(file, contractNamePath);
+            handlerContracts[i].contractAddress = stdToml.readAddress(file, contractAddressPath);
+        }
     }
 }
