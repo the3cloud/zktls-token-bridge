@@ -3,16 +3,21 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../interfaces/IBridge.sol";
 import "@openzeppelin/contracts/access/extensions/AccessControlDefaultAdminRules.sol";
+import "forge-std/console.sol";
+
 
 contract ERC20Handler is AccessControlDefaultAdminRules  {
-    using SafeERC20 for IERC20;
+    using SafeERC20 for ERC20;
 
     /* tokens configuration */
     // src token => destination chain id => destination handler address
     mapping(address => mapping(uint256 => address)) public destHandlers;
+    // src token => destination chain id => dest token
+    mapping(address => mapping(uint256 => address)) public destTokens;
     // src token => destination chain id => decimals
     mapping(address => mapping(uint256 => uint8)) public tokenDecimals;
     // src token => destination chain id => max transfer limit
@@ -21,6 +26,15 @@ contract ERC20Handler is AccessControlDefaultAdminRules  {
     mapping(address => bool) public tokenPaused;
     // bridge address
     address public bridge;
+
+    event TokenSupportAdded(
+        address indexed srcToken,
+        uint256 indexed destChainId,
+        address destToken,
+        address destHandler,
+        uint8 decimals,
+        uint256 limit
+    );
 
     event TokenLocked(
         address indexed token,
@@ -57,7 +71,7 @@ contract ERC20Handler is AccessControlDefaultAdminRules  {
 
     function handleTransfer(
         bytes calldata data
-    ) external payable onlyRole(BRIDGE_ROLE) returns (bytes memory) {
+    ) external payable returns (bytes memory) {
         (
             address token,
             uint256 destChainId,
@@ -70,7 +84,6 @@ contract ERC20Handler is AccessControlDefaultAdminRules  {
 
         (uint256 destAmount, uint256 usedSrcAmount, ) = getConvertibleAmount(
             token,
-            block.chainid,
             destChainId,
             amount
         );
@@ -81,14 +94,14 @@ contract ERC20Handler is AccessControlDefaultAdminRules  {
             require(msg.value == usedSrcAmount, "Invalid native token amount");
             emit TokenLocked(address(0), msg.sender, usedSrcAmount, destAmount);
         } else {
-            IERC20(token).safeTransferFrom(msg.sender, address(this), usedSrcAmount);
+            ERC20(token).safeTransferFrom(msg.sender, address(this), usedSrcAmount);
             emit TokenLocked(token, msg.sender, usedSrcAmount, destAmount);
         }
 
-        bytes memory message = abi.encode(destHandlers[token][destChainId], destAmount, receiver);
+        bytes memory message = abi.encode(destTokens[token][destChainId], destAmount, receiver);
         
         // Call bridge to send the cross-chain message
-        IBridge(bridge).sendMessage(destChainId, destHandlers[token][destChainId], message);
+    IBridge(bridge).sendMessage(destChainId, destHandlers[token][destChainId], message);
 
         return message;
     }
@@ -108,7 +121,7 @@ contract ERC20Handler is AccessControlDefaultAdminRules  {
             require(success, "Native token transfer failed");
             emit TokenUnlocked(address(0), receiver, amount);
         } else {
-            IERC20(token).safeTransfer(receiver, amount);
+            ERC20(token).safeTransfer(receiver, amount);
             emit TokenUnlocked(token, receiver, amount);
         }
 
@@ -116,9 +129,7 @@ contract ERC20Handler is AccessControlDefaultAdminRules  {
     }
 
     function getConvertibleAmount(
-
         address token,
-        uint256 srcChainId,
         uint256 destChainId,
         uint256 srcAmount
     ) public view returns (
@@ -126,7 +137,7 @@ contract ERC20Handler is AccessControlDefaultAdminRules  {
         uint256 usedSrcAmount,
         uint256 dust
     ) {
-        uint8 srcDecimals = tokenDecimals[token][srcChainId];
+        uint8 srcDecimals = ERC20(token).decimals();
         uint8 destDecimals = tokenDecimals[token][destChainId];
 
         if (srcDecimals == destDecimals) {
@@ -148,16 +159,19 @@ contract ERC20Handler is AccessControlDefaultAdminRules  {
 
     /* token management */
     function addTokenSupport(
-        address token,
+        address srcToken,
+        address destToken,
         uint256 chainId,
         address handler,
         uint8 decimals,
         uint256 limit
     ) external onlyRole(TOKEN_MANAGER_ROLE) {
-        tokenDecimals[token][chainId] = decimals;
-        destHandlers[token][chainId] = handler;
-        tokenPaused[token] = false;
-        maxTransferLimit[token][chainId] = limit;
+        tokenDecimals[srcToken][chainId] = decimals;
+        destHandlers[srcToken][chainId] = handler;
+        destTokens[srcToken][chainId] = destToken;
+        tokenPaused[srcToken] = false;
+        maxTransferLimit[srcToken][chainId] = limit;
+        emit TokenSupportAdded(srcToken, chainId, destToken, handler, decimals, limit);
     }
 
     function removeTokenSupport(

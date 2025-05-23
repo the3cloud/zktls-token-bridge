@@ -25,6 +25,9 @@ $ forge build
 
 ```shell
 $ forge test
+$ forge test --match-path test/Bridge.t.sol -vv
+$ forge test --match-path test/ERC20Handler.t.sol -vv
+$ forge test --match-test test_SendMessage -vv
 ```
 
 ### Format

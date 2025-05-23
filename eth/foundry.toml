@@ -12,10 +12,18 @@ fs_permissions = [{ access = "read-write", path = "config/" }]
 [rpc_endpoints]
 mainnet = "${RPC_MAINNET}"
 sepolia = "${RPC_SEPOLIA}"
+holesky = "${RPC_HOLESKY}"
+amoy = "${RPC_POLYGON_AMOY}"
+polygon = "${}"
 
 [etherscan]
 mainnet = { key = "${ETHERSCAN_MAINNET_KEY}" }
 sepolia = { key = "${ETHERSCAN_MAINNET_KEY}" }
+holesky = { key = "${ETHERSCAN_MAINNET_KEY}" }
+amoy = { key = "${POLYGON_MAINNET_KEY}" }
+polygon = { key = "${POLYGON_MAINNET_KEY}" }
+
+
 
 [dependencies]
 forge-std = "1.9.6"
