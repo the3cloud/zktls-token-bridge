@@ -7,16 +7,12 @@ interface IHandler {
      * @param data The encoded data containing token address and amount
      * @return handlerResponse The response from the handler
      */
-    function handleTransfer(
-        bytes calldata data
-    ) external returns (bytes memory handlerResponse);
+    function handleTransfer(bytes calldata data) external returns (bytes memory handlerResponse);
 
     /**
      * @notice Handles the token delivery operation on the destination chain
      * @param data The encoded data containing token address and amount
      * @return success Whether the delivery was successful
      */
-    function handleDelivery(
-        bytes calldata data
-    ) external returns (bool success);
-} 
+    function handleDelivery(bytes calldata data) external returns (bool success);
+}

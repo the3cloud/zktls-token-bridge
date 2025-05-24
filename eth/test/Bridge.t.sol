@@ -57,13 +57,13 @@ contract BridgeTest is Test, UpgradeableDeployer {
         owner = makeAddr("bridge_owner");
         tokenManager = makeAddr("token_manager");
         vm.deal(owner, 100 ether);
-        
+
         Create2Deployer deployer = new Create2Deployer();
         handler = new MockHandler();
         verifier = new MockVerifier();
 
         // Deploy the implementation and proxy
-        (address proxy, ) = deployUUPS(
+        (address proxy,) = deployUUPS(
             deployer,
             "Bridge",
             type(Bridge).creationCode,
@@ -71,7 +71,7 @@ contract BridgeTest is Test, UpgradeableDeployer {
         );
 
         // Cast the proxy address to Bridge interface
-        testBridge = Bridge(proxy); 
+        testBridge = Bridge(proxy);
     }
 
     function test_SendMessage() public {
@@ -84,14 +84,7 @@ contract BridgeTest is Test, UpgradeableDeployer {
 
         vm.prank(address(handler));
         vm.expectEmit(true, true, false, true);
-        emit MessageSent(
-            block.chainid,
-            address(handler),
-            destChainId,
-            destHandler,
-            1,
-            message
-        );
+        emit MessageSent(block.chainid, address(handler), destChainId, destHandler, 1, message);
         uint256 nonce = testBridge.sendMessage(destChainId, destHandler, message);
         assertEq(nonce, 1);
     }
@@ -128,22 +121,8 @@ contract BridgeTest is Test, UpgradeableDeployer {
 
         vm.prank(address(handler));
         vm.expectEmit(true, true, false, true);
-        emit MessageDelivered(
-            srcChainId,
-            srcHandler,
-            block.chainid,
-            destHandler,
-            messageNonce,
-            message
-        );
-        testBridge.deliverMessage(
-            srcChainId,
-            srcHandler,
-            destHandler,
-            messageNonce,
-            message,
-            proofBytes
-        );
+        emit MessageDelivered(srcChainId, srcHandler, block.chainid, destHandler, messageNonce, message);
+        testBridge.deliverMessage(srcChainId, srcHandler, destHandler, messageNonce, message, proofBytes);
 
         assertTrue(testBridge.completedMessages(srcChainId, messageNonce));
     }
@@ -160,25 +139,11 @@ contract BridgeTest is Test, UpgradeableDeployer {
         bytes memory proofBytes = "";
 
         vm.prank(address(handler));
-        testBridge.deliverMessage(
-            srcChainId,
-            srcHandler,
-            destHandler,
-            messageNonce,
-            message,
-            proofBytes
-        );
+        testBridge.deliverMessage(srcChainId, srcHandler, destHandler, messageNonce, message, proofBytes);
 
         vm.prank(address(handler));
         vm.expectRevert("Message already delivered");
-        testBridge.deliverMessage(
-            srcChainId,
-            srcHandler,
-            destHandler,
-            messageNonce,
-            message,
-            proofBytes
-        );
+        testBridge.deliverMessage(srcChainId, srcHandler, destHandler, messageNonce, message, proofBytes);
     }
 
     function test_RevertWhen_DeliverMessageUnregisteredHandler() public {
@@ -191,14 +156,7 @@ contract BridgeTest is Test, UpgradeableDeployer {
 
         vm.prank(address(handler));
         vm.expectRevert("Handler not registered");
-        testBridge.deliverMessage(
-            srcChainId,
-            srcHandler,
-            destHandler,
-            messageNonce,
-            message,
-            proofBytes
-        );
+        testBridge.deliverMessage(srcChainId, srcHandler, destHandler, messageNonce, message, proofBytes);
     }
 
     function test_RevertWhen_DeliverMessageFailedVerification() public {
@@ -214,14 +172,7 @@ contract BridgeTest is Test, UpgradeableDeployer {
 
         vm.prank(address(handler));
         vm.expectRevert("InvalidProof()");
-        testBridge.deliverMessage(
-            srcChainId,
-            srcHandler,
-            destHandler,
-            messageNonce,
-            message,
-            proofBytes
-        );
+        testBridge.deliverMessage(srcChainId, srcHandler, destHandler, messageNonce, message, proofBytes);
     }
 
     function test_RevertWhen_DeliverMessageFailedHandler() public {
@@ -238,13 +189,6 @@ contract BridgeTest is Test, UpgradeableDeployer {
 
         vm.prank(address(handler));
         vm.expectRevert("Handler delivery failed");
-        testBridge.deliverMessage(
-            srcChainId,
-            srcHandler,
-            destHandler,
-            messageNonce,
-            message,
-            proofBytes
-        );
+        testBridge.deliverMessage(srcChainId, srcHandler, destHandler, messageNonce, message, proofBytes);
     }
-} 
+}

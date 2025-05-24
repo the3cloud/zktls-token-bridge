@@ -9,9 +9,8 @@ import {stdToml} from "forge-std/StdToml.sol";
 import {Forge} from "./Forge.sol";
 import {Config} from "./DeployConfig.sol";
 import {console} from "forge-std/console.sol";
+
 contract DeployRecorder is Config {
-
-
     mapping(string => uint256) public handlerIndex;
     HandlerContract[] public handlers;
     BridgeContract public bridge;
@@ -36,8 +35,8 @@ contract DeployRecorder is Config {
     }
 
     function _restoreEoaConfig() internal returns (string memory deployStr) {
-       EOAConfig memory eoaConfig = getEOAConfig();     
-        deployStr = stdToml.serialize("eoa", "create2_deployer",  Strings.toHexString(eoaConfig.create2Deployer));
+        EOAConfig memory eoaConfig = getEOAConfig();
+        deployStr = stdToml.serialize("eoa", "create2_deployer", Strings.toHexString(eoaConfig.create2Deployer));
         deployStr = stdToml.serialize("eoa", "bridge_owner", Strings.toHexString(eoaConfig.bridgeOwner));
         deployStr = stdToml.serialize("eoa", "bridge_token_manager", Strings.toHexString(eoaConfig.bridgeTokenManager));
         deployStr = stdToml.serialize("eoa", "bridge_verifier", Strings.toHexString(eoaConfig.bridgeVerifier));
@@ -67,22 +66,19 @@ contract DeployRecorder is Config {
         string memory itemStr = "";
 
         for (uint256 i = 0; i < handlerCount; i++) {
-            string memory itemIdx= string.concat(".handler[", Strings.toString(i), "]");
+            string memory itemIdx = string.concat(".handler[", Strings.toString(i), "]");
             string memory item = stdToml.serialize(itemIdx, "contractName", handlers[i].contractName);
             item = stdToml.serialize(itemIdx, "contractAddress", Strings.toHexString(handlers[i].contractAddress));
-            
+
             items[i] = item;
             itemStr = string.concat(itemStr, item);
             if (i < handlerCount - 1) {
                 itemStr = string.concat(itemStr, ",");
             }
         }
-        
+
         string memory deployStr = string.concat(
-            "{ ",
-            '"eoa"', ":", eoaDeployStr,
-            ',"bridge"', ":", bridgeDeployStr,
-            ',"handlers"', ":[", itemStr, "]}"
+            "{ ", '"eoa"', ":", eoaDeployStr, ',"bridge"', ":", bridgeDeployStr, ',"handlers"', ":[", itemStr, "]}"
         );
         stdToml.write(deployStr, path);
     }

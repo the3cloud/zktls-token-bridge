@@ -37,11 +37,7 @@ contract Bridge is Initializable, PausableUpgradeable, UUPSUpgradeable, BridgeMa
         bytes message
     );
 
-    function initialize(
-        address initialOwner,
-        address _tokenManager,
-        address _verifier
-    ) initializer public {
+    function initialize(address initialOwner, address _tokenManager, address _verifier) public initializer {
         __BridgeManager_init(initialOwner, _tokenManager);
         __Pausable_init();
         __UUPSUpgradeable_init();
@@ -71,21 +67,21 @@ contract Bridge is Initializable, PausableUpgradeable, UUPSUpgradeable, BridgeMa
      * @param message Message bytes to be sent
      * @return Message nonce
      */
-    function sendMessage(
-        uint256 destChainId,
-        address destHandler,
-        bytes calldata message
-    ) external whenNotPaused returns (uint256) {
+    function sendMessage(uint256 destChainId, address destHandler, bytes calldata message)
+        external
+        whenNotPaused
+        returns (uint256)
+    {
         require(registeredHandlers[msg.sender], "Handler not registered");
         require(destHandler != address(0), "Invalid destination handler");
 
         messageNonce++;
-        
+
         emit MessageSent(
-            uint256(block.chainid),  // fromChainId
-            msg.sender,             // fromHandler
-            destChainId,            // toChainId
-            destHandler,            // toHandler
+            uint256(block.chainid), // fromChainId
+            msg.sender, // fromHandler
+            destChainId, // toChainId
+            destHandler, // toHandler
             messageNonce,
             message
         );
@@ -112,25 +108,18 @@ contract Bridge is Initializable, PausableUpgradeable, UUPSUpgradeable, BridgeMa
         require(registeredHandlers[destHandler], "Handler not registered");
         require(!completedMessages[srcChainId][messageNonce_], "Message already delivered");
 
-
         // encode public inputs for the verifier
-        bytes memory publicInputs = abi.encode(srcChainId, srcHandler, uint256(block.chainid), destHandler, messageNonce_, message);
+        bytes memory publicInputs =
+            abi.encode(srcChainId, srcHandler, uint256(block.chainid), destHandler, messageNonce_, message);
         IProofVerifier(verifier).verifyProof(publicInputs, proofBytes);
-        
+
         completedMessages[srcChainId][messageNonce_] = true;
 
         // Call destination handler to process token delivery
         bool success = IHandler(destHandler).handleDelivery(message);
         require(success, "Handler delivery failed");
 
-        emit MessageDelivered(
-            srcChainId,           
-            srcHandler,           
-            uint256(block.chainid), 
-            destHandler,          
-            messageNonce_,
-            message
-        );
+        emit MessageDelivered(srcChainId, srcHandler, uint256(block.chainid), destHandler, messageNonce_, message);
     }
 
     function pause() external restricted {

@@ -10,6 +10,7 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 contract Config {
     using stdToml for string;
+
     struct EOAConfig {
         address bridgeOwner;
         address bridgeTokenManager;
@@ -69,12 +70,16 @@ contract Config {
         bridgeContracts.impl = stdToml.readAddress(file, "$.bridge.impl");
     }
 
-    function getHandlerContractsInfo(uint256 handlerCount) public view returns (HandlerContract[] memory handlerContracts) {
+    function getHandlerContractsInfo(uint256 handlerCount)
+        public
+        view
+        returns (HandlerContract[] memory handlerContracts)
+    {
         VmSafe vm = Forge.safeVm();
 
         string memory file = vm.readFile(configPath());
         handlerContracts = new HandlerContract[](handlerCount);
-        
+
         for (uint256 i = 0; i < 2; i++) {
             string memory contractAddressPath = string.concat("$.handlers[", Strings.toString(i), "].contractAddress");
             string memory contractNamePath = string.concat("$.handlers[", Strings.toString(i), "].contractName");

@@ -10,13 +10,12 @@ import {UpgradeableDeployer} from "./utils/UpgradeableDeployer.sol";
 import {Bridge} from "../contracts/Bridge.sol";
 
 contract BridgeDeployScript is Script, UpgradeableDeployer {
-    
     EOAConfig eoaConfig;
 
     function run() external {
         vm.startBroadcast();
-        
-        eoaConfig = getEOAConfig(); 
+
+        eoaConfig = getEOAConfig();
 
         console.log("eoaConfig.bridgeOwner", eoaConfig.bridgeOwner);
         console.log("eoaConfig.bridgeTokenManager", eoaConfig.bridgeTokenManager);
@@ -28,12 +27,7 @@ contract BridgeDeployScript is Script, UpgradeableDeployer {
             "Bridge",
             type(Bridge).creationCode,
             abi.encodeCall(
-                Bridge.initialize,
-                (
-                    eoaConfig.bridgeOwner, 
-                    eoaConfig.bridgeTokenManager, 
-                    eoaConfig.bridgeVerifier
-                )
+                Bridge.initialize, (eoaConfig.bridgeOwner, eoaConfig.bridgeTokenManager, eoaConfig.bridgeVerifier)
             )
         );
         console.log("Bridge implementation deployed at:", implAddress);

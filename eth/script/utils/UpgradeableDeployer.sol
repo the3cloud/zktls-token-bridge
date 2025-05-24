@@ -16,10 +16,12 @@ contract UpgradeableDeployer is DeployRecorder {
         return deployImplementation(deployer, contractName, bytecode, bytes(""));
     }
 
-    function deployImplementation(Create2Deployer deployer, string memory contractName, bytes memory bytecode, bytes memory args)
-        public
-        returns (address)
-    {
+    function deployImplementation(
+        Create2Deployer deployer,
+        string memory contractName,
+        bytes memory bytecode,
+        bytes memory args
+    ) public returns (address) {
         bytes32 implementationSalt = keccak256(abi.encode(contractName, "implementation"));
         address implementation = deployer.deploy(implementationSalt, bytecode, args);
 
@@ -42,16 +44,14 @@ contract UpgradeableDeployer is DeployRecorder {
         address proxy = deployer.deploy{value: amount}(proxySalt, type(ERC1967Proxy).creationCode, deployArgs);
 
         addDeployedContract(contractName, proxy, implementation);
-        
+
         return (proxy, implementation);
     }
 
-    function deployUUPS(
-        Create2Deployer deployer, 
-        string memory contractName, 
-        bytes memory bytecode, 
-        bytes memory args
-    ) public returns (address, address) {
+    function deployUUPS(Create2Deployer deployer, string memory contractName, bytes memory bytecode, bytes memory args)
+        public
+        returns (address, address)
+    {
         return deployUUPS(deployer, contractName, bytecode, args, 0);
     }
 
@@ -67,4 +67,4 @@ contract UpgradeableDeployer is DeployRecorder {
 
         return beacon;
     }
-} 
+}

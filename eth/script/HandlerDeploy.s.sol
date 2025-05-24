@@ -10,12 +10,10 @@ import {Bridge} from "../contracts/Bridge.sol";
 import {UpgradeableDeployer} from "./utils/UpgradeableDeployer.sol";
 
 contract HandlerDeployScript is Script, UpgradeableDeployer {
-
     EOAConfig eoaConfig;
     BridgeContract bridgeContracts;
 
     function run() external {
-
         eoaConfig = getEOAConfig();
         bridgeContracts = getBridgeContractsInfo();
         Create2Deployer deployer = Create2Deployer(eoaConfig.create2Deployer);
@@ -27,10 +25,7 @@ contract HandlerDeployScript is Script, UpgradeableDeployer {
             keccak256(abi.encodePacked("ERC20Handler")), // salt
             type(ERC20Handler).creationCode, // contract bytecode
             abi.encode( // constructor args
-                eoaConfig.handlerAdmin,
-                eoaConfig.handlerManager,
-                bridgeContracts.proxy
-            )
+            eoaConfig.handlerAdmin, eoaConfig.handlerManager, bridgeContracts.proxy)
         );
         console.log("ERC20Handler deployed at:", handlerAddress);
         addDeployedContract("ERC20Handler", handlerAddress, address(0x0));

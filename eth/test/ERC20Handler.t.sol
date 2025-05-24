@@ -11,7 +11,7 @@ import {MockVerifier} from "../contracts/mocks/MockVerifier.sol";
 
 contract TestERC20 is ERC20 {
     constructor() ERC20("Test Token", "TTK") {
-        _mint(msg.sender, 1000000 * 10**18);
+        _mint(msg.sender, 1000000 * 10 ** 18);
     }
 }
 
@@ -25,16 +25,11 @@ contract ERC20HandlerTest is Test, UpgradeableDeployer {
     address public user;
     uint256 public constant SOURCE_CHAIN_ID = 1;
     uint256 public constant DEST_CHAIN_ID = 2;
-    uint256 public constant INITIAL_LIMIT = 1000 * 10**18;
+    uint256 public constant INITIAL_LIMIT = 1000 * 10 ** 18;
 
-    function _configureBridge(
-        Create2Deployer deployer_,
-        address admin_,
-        address tokenManager_,
-        address verifier_
-    ) internal {
-        
-    }
+    function _configureBridge(Create2Deployer deployer_, address admin_, address tokenManager_, address verifier_)
+        internal
+    {}
 
     event TokenSupportAdded(
         address indexed srcToken,
@@ -45,24 +40,11 @@ contract ERC20HandlerTest is Test, UpgradeableDeployer {
         uint256 limit
     );
 
-    event TokenLocked(
-        address indexed token,
-        address indexed sender,
-        uint256 srcAmount,
-        uint256 destAmount
-    );
+    event TokenLocked(address indexed token, address indexed sender, uint256 srcAmount, uint256 destAmount);
 
-    event TokenUnlocked(
-        address indexed token,
-        address indexed receiver,
-        uint256 amount
-    );
+    event TokenUnlocked(address indexed token, address indexed receiver, uint256 amount);
 
-    event TokenLimitUpdated(
-        address indexed token,
-        uint256 indexed chainId,
-        uint256 maxTransferLimit
-    );
+    event TokenLimitUpdated(address indexed token, uint256 indexed chainId, uint256 maxTransferLimit);
 
     function _setUpTokenSupport() internal {
         // Setup token support
@@ -71,31 +53,31 @@ contract ERC20HandlerTest is Test, UpgradeableDeployer {
             address(token),
             address(token), // for test purpose, using the same token for src and dest chain
             DEST_CHAIN_ID,
-            address(destHandler), 
+            address(destHandler),
             18, // decimals
             INITIAL_LIMIT
         );
         destHandler.addTokenSupport(
             address(token),
-            address(token), // for test purpose, using the same token for src and dest chain    
+            address(token), // for test purpose, using the same token for src and dest chain
             SOURCE_CHAIN_ID,
-            address(srcHandler),  
+            address(srcHandler),
             18, // decimals
             INITIAL_LIMIT
         );
-        vm.stopPrank();  
+        vm.stopPrank();
     }
 
     function setUp() public {
         admin = makeAddr("admin");
         tokenManager = makeAddr("tokenManager");
         user = makeAddr("user");
-        
+
         vm.startPrank(admin);
         Create2Deployer deployer = new Create2Deployer();
         MockVerifier verifier = new MockVerifier();
         // deploy bridge
-        (address proxy, ) = deployUUPS(
+        (address proxy,) = deployUUPS(
             deployer,
             "Bridge",
             type(Bridge).creationCode,
@@ -119,34 +101,20 @@ contract ERC20HandlerTest is Test, UpgradeableDeployer {
         testBridge.registerHandler(address(destHandler));
         token = new TestERC20();
         //Transfer some tokens to user
-        token.transfer(user, 1000 * 10**18);
-        vm.stopPrank(); 
+        token.transfer(user, 1000 * 10 ** 18);
+        vm.stopPrank();
         // Transfer some tokens to user
         vm.startPrank(admin);
-        token.transfer(user, 1000 * 10**18);
-        token.transfer(address(destHandler), 10000 * 10**18);
+        token.transfer(user, 1000 * 10 ** 18);
+        token.transfer(address(destHandler), 10000 * 10 ** 18);
         vm.stopPrank();
     }
 
-    function test_AddTokenSupport() public { 
+    function test_AddTokenSupport() public {
         vm.expectEmit(true, true, true, true);
-        emit TokenSupportAdded(
-            address(token),
-            DEST_CHAIN_ID,
-            address(token),
-            address(destHandler),
-            18,
-            INITIAL_LIMIT
-        ); 
-        emit TokenSupportAdded(
-            address(token),
-            SOURCE_CHAIN_ID,
-            address(token),
-            address(srcHandler),
-            18,
-            INITIAL_LIMIT
-        );
-        
+        emit TokenSupportAdded(address(token), DEST_CHAIN_ID, address(token), address(destHandler), 18, INITIAL_LIMIT);
+        emit TokenSupportAdded(address(token), SOURCE_CHAIN_ID, address(token), address(srcHandler), 18, INITIAL_LIMIT);
+
         _setUpTokenSupport();
 
         assertEq(destHandler.tokenDecimals(address(token), SOURCE_CHAIN_ID), 18);
@@ -157,18 +125,13 @@ contract ERC20HandlerTest is Test, UpgradeableDeployer {
     }
 
     function test_HandleTransfer() public {
-        uint256 amount = 100 * 10**18;
+        uint256 amount = 100 * 10 ** 18;
         _setUpTokenSupport();
-       
+
         vm.startPrank(user);
         token.approve(address(srcHandler), amount);
 
-        bytes memory data = abi.encode(
-            address(token),
-            DEST_CHAIN_ID,
-            amount,
-            user
-        ); 
+        bytes memory data = abi.encode(address(token), DEST_CHAIN_ID, amount, user);
 
         srcHandler.handleTransfer(data);
 
@@ -181,12 +144,7 @@ contract ERC20HandlerTest is Test, UpgradeableDeployer {
         vm.startPrank(user);
         token.approve(address(srcHandler), amount);
 
-        bytes memory data = abi.encode(
-            address(token),
-            DEST_CHAIN_ID,
-            amount,
-            user
-        );
+        bytes memory data = abi.encode(address(token), DEST_CHAIN_ID, amount, user);
 
         vm.expectRevert("Exceeds transfer limit");
         srcHandler.handleTransfer(data);
@@ -197,53 +155,35 @@ contract ERC20HandlerTest is Test, UpgradeableDeployer {
         srcHandler.setTokenPaused(address(token), true);
         vm.stopPrank();
 
-        uint256 amount = 100 * 10**18;
+        uint256 amount = 100 * 10 ** 18;
         vm.startPrank(user);
         token.approve(address(srcHandler), amount);
 
-        bytes memory data = abi.encode(
-            address(token),
-            DEST_CHAIN_ID,
-            amount,
-            user
-        );
+        bytes memory data = abi.encode(address(token), DEST_CHAIN_ID, amount, user);
 
         vm.expectRevert("Token is paused");
         srcHandler.handleTransfer(data);
     }
 
     function test_HandleDelivery() public {
-        uint256 amount = 100 * 10**18;
+        uint256 amount = 100 * 10 ** 18;
         uint256 initialBalance = token.balanceOf(user);
         _setUpTokenSupport();
         // First transfer tokens to handler
         vm.startPrank(user);
         token.approve(address(srcHandler), amount);
-        bytes memory transferData = abi.encode(
-            address(token),
-            DEST_CHAIN_ID,
-            amount,
-            user
-        );
+        bytes memory transferData = abi.encode(address(token), DEST_CHAIN_ID, amount, user);
         bytes memory messageBytes = srcHandler.handleTransfer(transferData);
-        
+
         vm.stopPrank();
 
         // Now test delivery
-        bytes memory expectedDeliveryData = abi.encode(
-            address(token),
-            amount,
-            user
-        );
+        bytes memory expectedDeliveryData = abi.encode(address(token), amount, user);
         assertEq(keccak256(messageBytes), keccak256(expectedDeliveryData));
 
         vm.expectEmit(true, true, false, true);
-        emit TokenUnlocked(
-            address(token),
-            user,
-            amount
-        );
-        
+        emit TokenUnlocked(address(token), user, amount);
+
         testBridge.deliverMessage(
             SOURCE_CHAIN_ID,
             address(srcHandler),
@@ -252,19 +192,16 @@ contract ERC20HandlerTest is Test, UpgradeableDeployer {
             messageBytes,
             "" // proofBytes
         );
-        
+
         assertEq(token.balanceOf(user), initialBalance); // Back to initial balance
     }
 
     function test_GetConvertibleAmount() public {
-        uint256 amount = 100 * 10**18;
+        uint256 amount = 100 * 10 ** 18;
         _setUpTokenSupport();
 
-        (uint256 destAmount, uint256 usedSrcAmount, uint256 dust) = srcHandler.getConvertibleAmount(
-            address(token),
-            DEST_CHAIN_ID,
-            amount
-        );
+        (uint256 destAmount, uint256 usedSrcAmount, uint256 dust) =
+            srcHandler.getConvertibleAmount(address(token), DEST_CHAIN_ID, amount);
 
         assertEq(destAmount, amount);
         assertEq(usedSrcAmount, amount);
@@ -272,28 +209,24 @@ contract ERC20HandlerTest is Test, UpgradeableDeployer {
     }
 
     function test_SetTransferLimit() public {
-        uint256 newLimit = 2000 * 10**18;
+        uint256 newLimit = 2000 * 10 ** 18;
         vm.startPrank(tokenManager);
-        
+
         vm.expectEmit(true, true, false, true);
-        emit TokenLimitUpdated(
-            address(token),
-            DEST_CHAIN_ID,
-            newLimit
-        );
-        
+        emit TokenLimitUpdated(address(token), DEST_CHAIN_ID, newLimit);
+
         srcHandler.setTransferLimit(address(token), DEST_CHAIN_ID, newLimit);
-        
+
         assertEq(srcHandler.maxTransferLimit(address(token), DEST_CHAIN_ID), newLimit);
     }
 
     function test_RemoveTokenSupport() public {
         vm.startPrank(tokenManager);
-        
+
         srcHandler.removeTokenSupport(address(token), DEST_CHAIN_ID);
-        
+
         assertEq(srcHandler.tokenDecimals(address(token), DEST_CHAIN_ID), 0);
         assertEq(srcHandler.destHandlers(address(token), DEST_CHAIN_ID), address(0));
         assertEq(srcHandler.maxTransferLimit(address(token), DEST_CHAIN_ID), 0);
     }
-} 
+}
