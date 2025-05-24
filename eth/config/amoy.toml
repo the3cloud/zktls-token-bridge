@@ -1,0 +1,17 @@
+[eoa]
+bridge_owner = "0x3fcbaf4822e7c7364e43aec8253dfc888b9235bb"
+bridge_token_manager = "0x3fcbaf4822e7c7364e43aec8253dfc888b9235bb"
+bridge_verifier = "0x6263c9d535ac76c538c95017b5d686a2741130cc"
+create2_deployer = "0x35e3c3be8065bae59e58f9d3182af1a333df0e0e"
+handler_admin = "0x3fcbaf4822e7c7364e43aec8253dfc888b9235bb"
+handler_manager = "0x3fcbaf4822e7c7364e43aec8253dfc888b9235bb"
+handlers_count = "1"
+test_token = "0x01Fba73c837a0003e008c28Fc8120084C1241266"
+
+[bridge]
+impl = "0x8f81300d6b6bdbed38a38c531a9aab1edea90039"
+proxy = "0xa88c1c777a056510331325dfad71140320dd8865"
+
+[[handlers]]
+contractAddress = "0x48d4c20ce517a007d1c7fae52b4562a7d7fadead"
+contractName = "ERC20Handler"
