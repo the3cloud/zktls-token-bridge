@@ -8,7 +8,12 @@ import "./BridgeManager.sol";
 import "./interfaces/IHandler.sol";
 import "./interfaces/IVerifier.sol";
 
-contract Bridge is Initializable, PausableUpgradeable, UUPSUpgradeable, BridgeManager {
+contract Bridge is
+    Initializable,
+    PausableUpgradeable,
+    UUPSUpgradeable,
+    BridgeManager
+{
     // Registered handlers
     mapping(address => bool) public registeredHandlers;
     // Message sequence counter
@@ -21,12 +26,14 @@ contract Bridge is Initializable, PausableUpgradeable, UUPSUpgradeable, BridgeMa
 
     event MessageSent(
         uint256 fromChainId,
-        address indexed fromHandler,
+        address fromHandler,
         uint256 toChainId,
-        address indexed toHandler,
+        address toHandler,
         uint256 nonce,
-        bytes message
+        bytes32 messageHash
     );
+
+    event MessageSentBody(bytes message);
 
     event MessageDelivered(
         uint256 fromChainId,
@@ -41,7 +48,7 @@ contract Bridge is Initializable, PausableUpgradeable, UUPSUpgradeable, BridgeMa
         address initialOwner,
         address _tokenManager,
         address _verifier
-    ) initializer public {
+    ) public initializer {
         __BridgeManager_init(initialOwner, _tokenManager);
         __Pausable_init();
         __UUPSUpgradeable_init();
@@ -80,15 +87,17 @@ contract Bridge is Initializable, PausableUpgradeable, UUPSUpgradeable, BridgeMa
         require(destHandler != address(0), "Invalid destination handler");
 
         messageNonce++;
-        
+
         emit MessageSent(
-            uint256(block.chainid),  // fromChainId
-            msg.sender,             // fromHandler
-            destChainId,            // toChainId
-            destHandler,            // toHandler
+            uint256(block.chainid), // fromChainId
+            msg.sender, // fromHandler
+            destChainId, // toChainId
+            destHandler, // toHandler
             messageNonce,
-            message
+            keccak256(message)
         );
+
+        emit MessageSentBody(message);
 
         return messageNonce;
     }
@@ -110,13 +119,22 @@ contract Bridge is Initializable, PausableUpgradeable, UUPSUpgradeable, BridgeMa
         bytes calldata proofBytes
     ) external whenNotPaused {
         require(registeredHandlers[destHandler], "Handler not registered");
-        require(!completedMessages[srcChainId][messageNonce_], "Message already delivered");
-
+        require(
+            !completedMessages[srcChainId][messageNonce_],
+            "Message already delivered"
+        );
 
         // encode public inputs for the verifier
-        bytes memory publicInputs = abi.encode(srcChainId, srcHandler, uint256(block.chainid), destHandler, messageNonce_, message);
+        bytes memory publicInputs = abi.encode(
+            srcChainId,
+            srcHandler,
+            uint256(block.chainid),
+            destHandler,
+            messageNonce_,
+            message
+        );
         IProofVerifier(verifier).verifyProof(publicInputs, proofBytes);
-        
+
         completedMessages[srcChainId][messageNonce_] = true;
 
         // Call destination handler to process token delivery
@@ -124,10 +142,10 @@ contract Bridge is Initializable, PausableUpgradeable, UUPSUpgradeable, BridgeMa
         require(success, "Handler delivery failed");
 
         emit MessageDelivered(
-            srcChainId,           
-            srcHandler,           
-            uint256(block.chainid), 
-            destHandler,          
+            srcChainId,
+            srcHandler,
+            uint256(block.chainid),
+            destHandler,
             messageNonce_,
             message
         );
